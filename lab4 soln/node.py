@@ -1,6 +1,6 @@
 import cryptography.hazmat.primitives.asymmetric.ed25519 as ed25519
 from argparse import ArgumentParser
-import json, time, errno, random
+import json, time, errno, random, re
 from threading import Lock, Thread
 import socketserver, socket
 
@@ -12,15 +12,15 @@ class MyTCPServer(socketserver.ThreadingTCPServer):
 		self.blockchain = Blockchain()
 		self.blockchain_lock = Lock()
 		self.block_proposals = set([])
+		self.pool = []
 		self.handlers = []
-		self.clients = []
+		self.clients = {}
 		self.consensus_phase = False
 		self.serv_addr = server_address
 
 		self.private_key = ed25519.Ed25519PrivateKey.generate()
 		self.sender = self.private_key.public_key().public_bytes_raw().hex()
 		self.nonce = 0
-
 
 		# REMOVE THIS!!
 		self.phrases = open("phrases.txt", 'r').read().splitlines()
@@ -32,6 +32,42 @@ class MyTCPServer(socketserver.ThreadingTCPServer):
 
 		# self.consensus_broadcast(5)
 
+	def validate_transaction(self, transaction_message):
+		sender_valid = re.compile('^[a-fA-F0-9]{64}$')
+		message_valid = re.compile('^[a-zA-z0-9]{0,70}$')
+		signature_valid = re.compile('^[a-fA-F0-9]{128}$')
+		if sender_valid.search(transaction_message['payload']['sender']) and message_valid.search(transaction_message['payload']['message']) and signature_valid.search(transaction_message['payload']['signature']) :
+			return True
+		return False
+
+	def validate_consensus(self):
+		return
+
+	def validate_nonce(self, message):
+		for c in self.clients:
+			if c["public_key"] == message["payload"]["sender"]:
+				if c["nonce"] < message["payload"]["nonce"]:
+					return True
+				else:
+					return False
+		
+		new_client = {"public_key": message["payload"]["sender"] ,"nonce": 0}
+		self.clients.append(new_client)
+		return True
+	
+	def validate_pool(self, message):
+		for t in self.pool:
+			if t["public_key"] == message["payload"]["sender"]:
+				if t["nonce"] == message["payload"]["sender"]:
+					return False
+				
+		return True
+
+	def update_nonce(self, public_key, nonce):
+		for c in self.clients:
+			if c["public_key"] == public_key:
+				c["public_key"] = nonce
+	
 	def handle_commands(self):
 		command_socket_addr = (self.serv_addr[0],self.serv_addr[1]+100)
 		self.command_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -40,13 +76,56 @@ class MyTCPServer(socketserver.ThreadingTCPServer):
 		print(f"listening for connection to my command socket on: {command_socket_addr}")
 		conn, addr = self.command_socket.accept()
 		print(f"controller connected.")
+		"""
 		while True:
-			data = conn.recv(1024)
-			command = data.decode()
-			if command == "consensus":
+			raw_message = conn.recv(1024)
+			message = json.loads(raw_message.decode())
+			if message['type'] == "consensus":
 				self.consensus_broadcast()
-			if command == "transaction":
-				self.make_transaction(self.phrases[self.nonce])
+			if message['type'] == "transaction":
+				print("TRANSACTION")
+				#self.make_transaction(self.phrases[self.nonce])
+				"""
+		raw_message = conn.recv(1024)
+		message = json.loads(raw_message.decode())
+		if message['type'] == "consensus":
+			self.consensus_broadcast()
+		if message['type'] == "transaction":
+			if not self.validate_transaction(message):
+				conn.send(json.dumps({"response": "False"}).encode())
+
+			#If the message is correct	
+			else:
+				#if client does not exist
+				if not self.client_exists(message["payload"]["sender"]):
+					new_client = {"public_key": message["payload"]["sender"] ,"nonce": 0}
+					self.clients.append(new_client)
+					conn.send(json.dumps({"response": "True"}).encode())
+					self.pool.append(message)
+
+				#if nonce is not valid with stored client
+				elif not self.validate_nonce(message):
+					conn.send(json.dumps({"response": "False"}).encode())
+
+				else:
+					#if transaction same public key + nonce transaction does not exist in pool
+					if self.validate_pool(message):
+						conn.send(json.dumps({"response": "True"}).encode())
+						self.pool.append(message)
+						self.update_nonce(message["payload"]["sender"], message["payload"]["nonse"])
+					else:
+						conn.send(json.dumps({"response": "False"}).encode())
+
+
+
+				if not self.client_exists(message["payload"]["sender"]):
+					new_client = {"public_key": message["payload"]["sender"] ,"nonce": 0}
+					self.clients.append(new_client)
+				else:
+					# not sure if nonce has to just be bigger that previous or be in order, as contradicting answers on ed
+					self.clients
+					conn.send(json.dumps({"response": "True"}).encode())
+						#self.make_transaction(self.phrases[self.nonce])
 
 	def node_addresses(self, node_list_path):
 		node_addresses = []
@@ -55,7 +134,7 @@ class MyTCPServer(socketserver.ThreadingTCPServer):
 			if addr != self.serv_addr:
 				node_addresses.append(addr)
 		return node_addresses
-
+	
 	def startup(self, node_list_path):
 		Thread(target=self.handle_commands).start()
 		for node_addr in self.node_addresses(node_list_path):
@@ -160,6 +239,7 @@ class Client():
 			self.socket.close()
 			self.socket = socket.socket()
 
+
 		# 	print(errno.errorcode[socket.connect_ex(address)])
 		# 	socket.close()
 		print(f"successfully connected to {address}")
@@ -190,6 +270,7 @@ class Client():
 		print("sending block_request", b_request)
 		send_prefixed(self.socket, json.dumps(b_request).encode())
 		b_response = set([])
+		
 		try:
 			b_response = recv_prefixed(self.socket).decode()
 			b_response = set(json.loads(b_response))
@@ -257,13 +338,16 @@ class MyTCPHandler(socketserver.BaseRequestHandler):
 if __name__ == '__main__':
 	parser = ArgumentParser()
 	parser.add_argument('port', type=int)
+	parser.add_argument('node_address', type=str)
 	args = parser.parse_args()
 	port: int = args.port
+	node_address: str = args.node_address
 
 	HOST = 'localhost'
 
 	with MyTCPServer((HOST, port), MyTCPHandler) as server:
-		server.startup('node-list-test.txt')
+		#server.startup('node-list-test.txt')
+		server.startup(node_address)
 		# while True:
 		# 	server.handle_request()
 		server.serve_forever()

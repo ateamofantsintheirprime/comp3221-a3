@@ -73,7 +73,8 @@ class Blockchain():
 	def get_sender_nonce(self, sender_name) -> int:
 		return len([b for b in self.blockchain if b.sender==sender_name])
 
-	def validate_transaction(self, transaction: str) -> dict | TransactionValidationError:
+	#def validate_transaction(self, transaction: str) -> dict | TransactionValidationError:
+	def validate_transaction(self, transaction: str) -> dict:
 		try:
 			tx = json.loads(transaction)
 		except json.JSONDecodeError:
