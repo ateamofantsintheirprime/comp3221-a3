@@ -28,10 +28,13 @@ class Client():
 			print(e)
 
 
-messages = open("phrases.txt", 'r').read().splitlines()
-time.sleep(random.random()*10)
+messages = open("phrases.txt", 'r').read().splitlines()[:5]
+# time.sleep(random.random()*10)
 c = Client()
 
 for m in messages:
-	time.sleep(random.random()*7)
+	time.sleep(random.random()*5 )
+	time.sleep(0)
 	c.send(m)
+
+time.sleep(7)
