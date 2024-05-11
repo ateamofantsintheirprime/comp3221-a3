@@ -24,29 +24,41 @@ class MyTCPServer(socketserver.ThreadingTCPServer):
 
 		# REMOVE THIS!!
 		self.phrases = open("phrases.txt", 'r').read().splitlines()
-
-		print(f"my addr: {self.serv_addr}")
 		super().__init__(server_address, RequestHandlerClass, bind_and_activate)
 
-		time.sleep(1)
-
-		# self.consensus_broadcast(5)
+		# # the following several lines has got to be the worst fucking shit ive ever written please please please please fix it
+		# wait_for_address_available = True
+		# while wait_for_address_available:
+		# 	wait_for_address_available = False
+		# 	try:
+		# 		super().__init__(server_address, RequestHandlerClass, bind_and_activate)
+		# 	except OSError as e:
+		# 		if e.errno == 48: # Address in use error
+		# 			print("waiting for address to be available...")
+		# 			wait_for_address_available = True
+		# 			time.sleep(.1)
+		# 		else:
+		# 			raise e
 
 	def handle_commands(self):
 		command_socket_addr = (self.serv_addr[0],self.serv_addr[1]+100)
 		self.command_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 		self.command_socket.bind(command_socket_addr)
 		self.command_socket.listen()
-		print(f"listening for connection to my command socket on: {command_socket_addr}")
 		conn, addr = self.command_socket.accept()
-		print(f"controller connected.")
+		print("connected to controller")
 		while True:
-			data = conn.recv(1024)
-			command = data.decode()
-			if command == "consensus":
-				self.consensus_broadcast()
-			if command == "transaction":
-				self.make_transaction(self.phrases[self.nonce])
+			try:
+				command = recv_prefixed(conn).decode()
+				print("received command: ", command)
+				if command == "consensus":
+					self.consensus_broadcast()
+				if command == "transaction":
+					self.make_transaction(self.phrases[self.nonce])
+			except RuntimeError:
+				print("lost connection with command socket")
+				conn, addr = self.command_socket.accept()
+				print("connection re-established with command socket!")
 
 	def node_addresses(self, node_list_path):
 		node_addresses = []
@@ -57,16 +69,17 @@ class MyTCPServer(socketserver.ThreadingTCPServer):
 		return node_addresses
 
 	def startup(self, node_list_path):
-		Thread(target=self.handle_commands).start()
+		Thread(target=self.handle_commands,daemon=True).start()
 		for node_addr in self.node_addresses(node_list_path):
-			Thread(target=Client, args = (node_addr, self)).start()
+			Thread(target=Client, args = (node_addr, self),daemon=True).start()
 			# self.clients.append(Client(node_addr, self))
 
-	def make_transaction(self, message):
-		transaction = self.make_transaction_request(message)
-		self.send_transaction_requests(transaction)
-		for cl in self.clients:
-			Thread(target=cl.transaction_request, args = ([message])).start()
+	def make_transaction(self, message): # this is so fucking dumb lol. fix these function names and usages. make it GOOD PLEASE FOR THE LOVE OF GOD
+		# transaction = self.make_transaction_request(message)
+		self.nonce += 1
+		self.send_transaction_requests(message)
+		# for cl in self.clients:
+		# 	Thread(target=cl.transaction_request, args = ([message]),daemon=True).start()
 
 	def new_block_proposal(self):
 		self.block_proposals.append(self.blockchain.block_proposal())
@@ -80,7 +93,7 @@ class MyTCPServer(socketserver.ThreadingTCPServer):
 			threads = []
 			print(f"broadcasting block request for round {_}")
 			for client in self.clients:
-				t = Thread(target=client.block_request())	
+				t = Thread(target=client.block_request(),daemon=True)	
 				threads.append(t)
 				t.start()			
 				# received_blocks = client.block_request()
@@ -92,25 +105,27 @@ class MyTCPServer(socketserver.ThreadingTCPServer):
 
 
 	def make_transaction_request(self, message):
-		signature = make_signature(self.server.private_key, message, self.server.nonce)
-		transaction =  make_transaction(self.server.sender, message, signature, self.server.nonce)
+		signature = make_signature(self.private_key, message, self.nonce)
+		transaction =  make_transaction(self.sender, message, signature, self.nonce)
 		print("making transaction.")
-		return transaction
+		return {"type": "transaction", "payload" : transaction}
 	
 	def send_transaction_requests(self, message):
 		request = self.make_transaction_request(message)
 		results = []
-		threads = []
+		#threads = []
 		for client in self.clients:
-			t = Thread(target=client.send_request, args=(results, request))
-			t.start()
-			threads.append(t)
-		while len(results) < len(self.clients): # Check until all clients have responded
-			if json.dumps({"response": True}) in results:
-				# Transaction has been validated
-				self.blockchain.add_transaction(request)
-				return True
+			Thread(target=client.send_request, args=(results, request, 5),daemon=True).start() # not sure if this should time out but w/e
+			#t.start()
+			#threads.append(t)
+		while len(results) < len(self.clients) and {"response": True} not in results: # Check until all clients have responded or one validated my tx
+			print("waiting for validation... ", results)
 			time.sleep(0.1)
+		if {"response": True} in results:
+			# Transaction has been validated
+			print("someone validated my transaction woohoo!")
+			self.blockchain.add_transaction(request['payload'])
+			return True
 		return False
 	
 	def make_block_request(self):
@@ -128,7 +143,7 @@ class MyTCPServer(socketserver.ThreadingTCPServer):
 		results = []
 		threads = []
 		for client in self.clients:
-			t = Thread(target=client.send_request, args=(results, request, True))
+			t = Thread(target=client.send_request, args=(results, request, 5),daemon=True)
 			t.start()
 			threads.append(t)
 		for t in threads:
@@ -143,62 +158,45 @@ class Client():
 		self.server = server
 		self.address = address
 		self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-		print(self.address)
-		# self.s.connect(address)
-		# self.s.settimeout(0)
-		print(f"self.s: {self.socket}")
 		self.attempt_connect(address)
-		#t = Thread(target=self.attempt_connect, args=([address]))
-		#t.start()
 		self.server.clients.append(self)
 
 	def attempt_connect(self, address):
 		# socket.connect(address)
+		print(f"attempting to connect to {address}")
 		while self.socket.connect_ex(address) != 0:
 			time.sleep(1)
-			print(f"reattempting connection to {address}")
 			self.socket.close()
 			self.socket = socket.socket()
-
-		# 	print(errno.errorcode[socket.connect_ex(address)])
-		# 	socket.close()
 		print(f"successfully connected to {address}")
 
 	def send_request(self, results, message, timeout = 0):
 		self.socket.settimeout(timeout)
-		send_prefixed(self.socket, message.encode())
+		send_prefixed(self.socket, json.dumps(message).encode())
+		data = None
 		try:
-			data = recv_prefixed(self.socket).decode()
+			data = json.loads(recv_prefixed(self.socket).decode())
 			self.socket.settimeout(0)
-			print(data)
+			print("data reaching client: ", data)
 		except Exception as e:
 			print(e)
 		results.append(data)
 
-	# def transaction_request(self, results, message):
-	# 	send_prefixed(self.socket, message.encode())
+	# def block_request(self):
+
+	# 	self.socket.settimeout(5)
+	# 	print("sending block_request", b_request)
+	# 	send_prefixed(self.socket, json.dumps(b_request).encode())
+	# 	b_response = set([])
 	# 	try:
-	# 		data = recv_prefixed(self.socket).decode()
-	# 		print(data)
+	# 		b_response = recv_prefixed(self.socket).decode()
+	# 		b_response = set(json.loads(b_response))
+	# 		print(f"received block proposals: {b_response}, from {self.address}")
 	# 	except Exception as e:
 	# 		print(e)
-	# 	results.append(json.loads(data)['response'])
-
-	def block_request(self):
-
-		self.socket.settimeout(5)
-		print("sending block_request", b_request)
-		send_prefixed(self.socket, json.dumps(b_request).encode())
-		b_response = set([])
-		try:
-			b_response = recv_prefixed(self.socket).decode()
-			b_response = set(json.loads(b_response))
-			print(f"received block proposals: {b_response}, from {self.address}")
-		except Exception as e:
-			print(e)
 		
-		self.socket.settimeout(0)
-		self.server.block_proposals.update(b_response)
+		# self.socket.settimeout(0)
+		# self.server.block_proposals.update(b_response)
 
 class MyTCPHandler(socketserver.BaseRequestHandler):
 	server: MyTCPServer
@@ -240,15 +238,16 @@ class MyTCPHandler(socketserver.BaseRequestHandler):
 			# print(self.request.settimeout(2))
 			# print(self.request.gettimeout())
 			try:
-				data = recv_prefixed(self.request).decode()
+				data = json.loads(recv_prefixed(self.request).decode())
 			except:
 				break
 			print("Received from {}:".format(self.client_address[0]))
-			print(data)
-			if json.loads(data)['type'] == 'transaction':
-				self.transaction_response(data)
-			elif json.loads(data)['type'] == 'values':
-				self.block_response(json.loads(data)['payload'])
+			print("data reaching server: ", data)
+
+			if data['type'] == 'transaction':
+				self.transaction_response(data['payload'])
+			elif data['type'] == 'values':
+				self.block_response(data['payload'])
 
 	# def finish(self):
 	# 	print("connection broken or timed out. trying one more time")
@@ -263,7 +262,11 @@ if __name__ == '__main__':
 	HOST = 'localhost'
 
 	with MyTCPServer((HOST, port), MyTCPHandler) as server:
-		server.startup('node-list-test.txt')
-		# while True:
-		# 	server.handle_request()
-		server.serve_forever()
+		try:
+			server.startup('node-list-test.txt')
+			# while True:
+			# 	server.handle_request()
+			server.serve_forever()
+		except KeyboardInterrupt:
+			server.server_close()
+			print()

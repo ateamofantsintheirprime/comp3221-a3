@@ -4,6 +4,7 @@ from enum import Enum
 import hashlib
 import json
 import re
+from pprint import pprint
 
 sender_valid = re.compile('^[a-fA-F0-9]{64}$')
 signature_valid = re.compile('^[a-fA-F0-9]{128}$')
@@ -11,7 +12,7 @@ signature_valid = re.compile('^[a-fA-F0-9]{128}$')
 TransactionValidationError = Enum('TransactionValidationError', ['INVALID_JSON', 'INVALID_SENDER', 'INVALID_MESSAGE', 'INVALID_SIGNATURE'])
 
 def make_transaction(sender, message, signature, nonce) -> str:
-	return json.dumps({'sender': sender, 'message': message, 'signature': signature, 'nonce': nonce})
+	return {'sender': sender, 'message': message, 'signature': signature, 'nonce': nonce}
 
 def transaction_bytes(transaction: dict) -> bytes:
 	return json.dumps({k: transaction.get(k) for k in ['sender', 'message', 'nonce']}, sort_keys=True).encode()
@@ -66,6 +67,8 @@ class Blockchain():
 			sender = tx.get('sender')
 			self.nonces[sender] = self.nonces.get(sender,0) + 1
 			self.pool.append(tx)
+			print("added transaction to pool!")
+			print("current transaction pool: ", self.pool)
 			return True
 		print(tx)
 		return False
@@ -73,19 +76,26 @@ class Blockchain():
 	def get_sender_nonce(self, sender_name) -> int:
 		return len([b for b in self.blockchain if b.sender==sender_name])
 
-	def validate_transaction(self, transaction: str) -> dict | TransactionValidationError:
-		try:
-			tx = json.loads(transaction)
-		except json.JSONDecodeError:
-			return TransactionValidationError.INVALID_JSON
+	def validate_transaction(self, tx: dict) -> dict | TransactionValidationError:
+		print("trying to validate: ")
+		print(tx)
+		# try:
+		# 	tx = json.loads(transaction)
+		# except json.JSONDecodeError:
+		# 	return TransactionValidationError.INVALID_JSON # I dont want this error check to be here in future.
+		# 	# we should check json validity upon message reception
 
 		if not(tx.get('sender') and isinstance(tx['sender'], str) and sender_valid.search(tx['sender'])):
+			# print("not(tx.get('sender') and isinstance(tx['sender'], str): ", not(tx.get('sender') and isinstance(tx['sender'], str)))
+			# print("sender_valid.search(tx['sender']): ", sender_valid.search(tx['sender']))
 			return TransactionValidationError.INVALID_SENDER
 
 		if not(tx.get('message') and isinstance(tx['message'], str) and len(tx['message']) <= 70 and tx['message'].isalnum()):
 			return TransactionValidationError.INVALID_MESSAGE
 		
-		if not(tx.get('nonce') >= self.nonces.get(tx.get('sender'))):
+		if not(tx.get('nonce') >= self.nonces.get(tx.get('sender'),0)):
+			print(tx.get('nonce'))
+			print(self.nonces.get(tx.get('sender'),0))
 			return TransactionValidationError.INVALID_NONCE
 
 		public_key = ed25519.Ed25519PublicKey.from_public_bytes(bytes.fromhex(tx['sender']))
@@ -95,5 +105,5 @@ class Blockchain():
 			public_key.verify(bytes.fromhex(tx['signature']), transaction_bytes(tx))
 		except InvalidSignature:
 			return TransactionValidationError.INVALID_SIGNATURE
-
+		print("...validated!")
 		return tx
