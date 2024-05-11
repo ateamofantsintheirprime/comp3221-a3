@@ -76,6 +76,7 @@ class Blockchain():
 	def get_sender_nonce(self, sender_name) -> int:
 		return len([b for b in self.blockchain if b.sender==sender_name])
 
+<<<<<<< HEAD
 	def validate_transaction(self, tx: dict) -> dict | TransactionValidationError:
 		print("trying to validate: ")
 		print(tx)
@@ -84,6 +85,14 @@ class Blockchain():
 		# except json.JSONDecodeError:
 		# 	return TransactionValidationError.INVALID_JSON # I dont want this error check to be here in future.
 		# 	# we should check json validity upon message reception
+=======
+	#def validate_transaction(self, transaction: str) -> dict | TransactionValidationError:
+	def validate_transaction(self, transaction: str) -> dict:
+		try:
+			tx = json.loads(transaction)
+		except json.JSONDecodeError:
+			return TransactionValidationError.INVALID_JSON
+>>>>>>> 853c505eb6a87f9cf8cefb3b99dfaf8e23bdaf24
 
 		if not(tx.get('sender') and isinstance(tx['sender'], str) and sender_valid.search(tx['sender'])):
 			# print("not(tx.get('sender') and isinstance(tx['sender'], str): ", not(tx.get('sender') and isinstance(tx['sender'], str)))

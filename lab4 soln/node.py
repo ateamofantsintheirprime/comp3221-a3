@@ -1,6 +1,6 @@
 import cryptography.hazmat.primitives.asymmetric.ed25519 as ed25519
 from argparse import ArgumentParser
-import json, time, errno, random
+import json, time, errno, random, re
 from threading import Lock, Thread
 import socketserver, socket
 
@@ -12,15 +12,15 @@ class MyTCPServer(socketserver.ThreadingTCPServer):
 		self.blockchain = Blockchain()
 		self.blockchain_lock = Lock()
 		self.block_proposals = set([])
+		self.pool = []
 		self.handlers = []
-		self.clients = []
+		self.clients = {}
 		self.consensus_phase = False
 		self.serv_addr = server_address
 
 		self.private_key = ed25519.Ed25519PrivateKey.generate()
 		self.sender = self.private_key.public_key().public_bytes_raw().hex()
 		self.nonce = 0
-
 
 		# REMOVE THIS!!
 		self.phrases = open("phrases.txt", 'r').read().splitlines()
@@ -40,6 +40,42 @@ class MyTCPServer(socketserver.ThreadingTCPServer):
 		# 		else:
 		# 			raise e
 
+	def validate_transaction(self, transaction_message):
+		sender_valid = re.compile('^[a-fA-F0-9]{64}$')
+		message_valid = re.compile('^[a-zA-z0-9]{0,70}$')
+		signature_valid = re.compile('^[a-fA-F0-9]{128}$')
+		if sender_valid.search(transaction_message['payload']['sender']) and message_valid.search(transaction_message['payload']['message']) and signature_valid.search(transaction_message['payload']['signature']) :
+			return True
+		return False
+
+	def validate_consensus(self):
+		return
+
+	def validate_nonce(self, message):
+		for c in self.clients:
+			if c["public_key"] == message["payload"]["sender"]:
+				if c["nonce"] < message["payload"]["nonce"]:
+					return True
+				else:
+					return False
+		
+		new_client = {"public_key": message["payload"]["sender"] ,"nonce": 0}
+		self.clients.append(new_client)
+		return True
+	
+	def validate_pool(self, message):
+		for t in self.pool:
+			if t["public_key"] == message["payload"]["sender"]:
+				if t["nonce"] == message["payload"]["sender"]:
+					return False
+				
+		return True
+
+	def update_nonce(self, public_key, nonce):
+		for c in self.clients:
+			if c["public_key"] == public_key:
+				c["public_key"] = nonce
+	
 	def handle_commands(self):
 		command_socket_addr = (self.serv_addr[0],self.serv_addr[1]+100)
 		self.command_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -67,7 +103,7 @@ class MyTCPServer(socketserver.ThreadingTCPServer):
 			if addr != self.serv_addr:
 				node_addresses.append(addr)
 		return node_addresses
-
+	
 	def startup(self, node_list_path):
 		Thread(target=self.handle_commands,daemon=True).start()
 		for node_addr in self.node_addresses(node_list_path):
@@ -168,6 +204,10 @@ class Client():
 			time.sleep(1)
 			self.socket.close()
 			self.socket = socket.socket()
+
+
+		# 	print(errno.errorcode[socket.connect_ex(address)])
+		# 	socket.close()
 		print(f"successfully connected to {address}")
 
 	def send_request(self, results, message, timeout = 0):
@@ -194,6 +234,21 @@ class Client():
 	# 		print(f"received block proposals: {b_response}, from {self.address}")
 	# 	except Exception as e:
 	# 		print(e)
+	# 	results.append(json.loads(data)['response'])
+
+	def block_request(self):
+
+		self.socket.settimeout(5)
+		print("sending block_request", b_request)
+		send_prefixed(self.socket, json.dumps(b_request).encode())
+		b_response = set([])
+		
+		try:
+			b_response = recv_prefixed(self.socket).decode()
+			b_response = set(json.loads(b_response)) # this will cause a problem
+			print(f"received block proposals: {b_response}, from {self.address}")
+		except Exception as e:
+			print(e)
 		
 		# self.socket.settimeout(0)
 		# self.server.block_proposals.update(b_response)
@@ -256,8 +311,10 @@ class MyTCPHandler(socketserver.BaseRequestHandler):
 if __name__ == '__main__':
 	parser = ArgumentParser()
 	parser.add_argument('port', type=int)
+	parser.add_argument('node_address', type=str)
 	args = parser.parse_args()
 	port: int = args.port
+	node_address: str = args.node_address
 
 	HOST = 'localhost'
 
