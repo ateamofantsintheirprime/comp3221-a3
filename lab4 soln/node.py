@@ -1,4 +1,5 @@
 import cryptography.hazmat.primitives.asymmetric.ed25519 as ed25519
+from cryptography.exceptions import InvalidSignature
 from argparse import ArgumentParser
 import json, time, errno, random, re
 from threading import Lock, Thread
@@ -14,7 +15,7 @@ class MyTCPServer(socketserver.ThreadingTCPServer):
 		self.block_proposals = set([])
 		self.pool = []
 		self.handlers = []
-		self.clients = {}
+		self.clients = []
 		self.consensus_phase = False
 		self.serv_addr = server_address
 
@@ -32,14 +33,41 @@ class MyTCPServer(socketserver.ThreadingTCPServer):
 
 		# self.consensus_broadcast(5)
 
-	def validate_transaction(self, transaction_message):
+	def transaction_bytes(self, transaction: dict) -> bytes:
+		payload_data = transaction.get('payload', {})
+		return json.dumps({k: payload_data.get(k) for k in ['sender', 'message', 'nonce']}, sort_keys=True).encode()
+
+	def validate_transaction(self, tx):
 		sender_valid = re.compile('^[a-fA-F0-9]{64}$')
 		message_valid = re.compile('^[a-zA-z0-9]{0,70}$')
 		signature_valid = re.compile('^[a-fA-F0-9]{128}$')
-		if sender_valid.search(transaction_message['payload']['sender']) and message_valid.search(transaction_message['payload']['message']) and signature_valid.search(transaction_message['payload']['signature']) :
-			return True
-		return False
 
+		if not (tx.get('payload', {}).get('sender') and isinstance(tx['payload']['sender'], str) and sender_valid.search(tx['payload']['sender'])):
+			print(tx.get('sender'))
+			print(isinstance(tx['payload']['sender'], str))
+			print(sender_valid.search(tx['payload']['sender']))
+
+			print("[TX] Received an invalid transaction, wrong sender - {}".format(tx))
+			return False
+
+		if not (tx.get('payload', {}).get('message') and isinstance(tx['payload']['message'], str) or message_valid.search(tx['payload']['message'])):
+			print("[TX] Received an invalid transaction, wrong message - {}".format(tx))
+			return False
+		
+		
+		if not (tx.get('payload', {}).get('signature') and isinstance(tx['payload']['signature'], str) and signature_valid.search(tx['payload']['signature'])):
+			print("[TX] Received an invalid transaction, wrong signature message - {}".format(tx))
+			print("BBB")
+			return False
+		
+		public_key = ed25519.Ed25519PublicKey.from_public_bytes(bytes.fromhex(tx['payload']['sender']))
+		try:
+			public_key.verify(bytes.fromhex(tx['payload']['signature']), self.transaction_bytes(tx))
+			return True
+		except InvalidSignature:
+			print("[TX] Received an invalid transaction, wrong signature message - {}".format(tx))
+			return False
+		
 	def validate_consensus(self):
 		return
 
@@ -62,11 +90,30 @@ class MyTCPServer(socketserver.ThreadingTCPServer):
 					return False
 				
 		return True
+	
+	def client_exists(self, public_key):
+		for c in self.clients:
+			if isinstance(c, dict) and c["public_key"] == public_key:
+				return True
+		
+		return False
+
 
 	def update_nonce(self, public_key, nonce):
 		for c in self.clients:
 			if c["public_key"] == public_key:
 				c["public_key"] = nonce
+
+		return
+
+	def add_genesis():
+
+	
+	def distribute_transaction():
+		pass
+
+	def create_block_proposal():
+		pass
 	
 	def handle_commands(self):
 		command_socket_addr = (self.serv_addr[0],self.serv_addr[1]+100)
@@ -87,45 +134,58 @@ class MyTCPServer(socketserver.ThreadingTCPServer):
 				#self.make_transaction(self.phrases[self.nonce])
 				"""
 		raw_message = conn.recv(1024)
-		message = json.loads(raw_message.decode())
-		if message['type'] == "consensus":
+
+		try:
+			message = json.loads(raw_message.decode())
+		except json.JSONDecodeError:
+			print("JSON FILE NOT LOADABLE")
+			
+
+		if message['type'] == "values":
 			self.consensus_broadcast()
+
 		if message['type'] == "transaction":
+			print("[NET] Received a transaction from node {}: {}".format(addr[0], message))
+
+			#checks if message format is correct
 			if not self.validate_transaction(message):
 				conn.send(json.dumps({"response": "False"}).encode())
 
-			#If the message is correct	
 			else:
-				#if client does not exist
+				#checks if client exists
 				if not self.client_exists(message["payload"]["sender"]):
 					new_client = {"public_key": message["payload"]["sender"] ,"nonce": 0}
+					#DO I APPEND THE CLIENT???
 					self.clients.append(new_client)
 					conn.send(json.dumps({"response": "True"}).encode())
 					self.pool.append(message)
+					print("[MEM] Stored transaction in the transaction pool: {}".format(message['payload']['signature']))
+					self.distribute_transaction()
 
 				#if nonce is not valid with stored client
 				elif not self.validate_nonce(message):
+					print("[TX] Received an invalid transaction, wrong nonce - {}".format(message))
 					conn.send(json.dumps({"response": "False"}).encode())
 
 				else:
 					#if transaction same public key + nonce transaction does not exist in pool
-					if self.validate_pool(message):
+					if not self.validate_pool(message):
+						conn.send(json.dumps({"response": "False"}).encode())
+						#NOT SURE IF MESSAGE SHOULD BE WRONG NONCE OR WRONG SENDER
+						print("[TX] Received an invalid transaction, wrong nonce - {}".format(message))
+
 						conn.send(json.dumps({"response": "True"}).encode())
 						self.pool.append(message)
 						self.update_nonce(message["payload"]["sender"], message["payload"]["nonse"])
+						print("[MEM] Stored transaction in the transaction pool: {}".format(message['payload']['signature']))
 					else:
-						conn.send(json.dumps({"response": "False"}).encode())
+						conn.send(json.dumps({"response": "True"}).encode())
+						self.pool.append(message)
+						self.update_nonce(message["payload"]["sender"], message["payload"]["nonse"])
+						print("[MEM] Stored transaction in the transaction pool: {}".format(message['payload']['signature']))
+						self.distribute_transaction()
+						self.create_block_proposal()
 
-
-
-				if not self.client_exists(message["payload"]["sender"]):
-					new_client = {"public_key": message["payload"]["sender"] ,"nonce": 0}
-					self.clients.append(new_client)
-				else:
-					# not sure if nonce has to just be bigger that previous or be in order, as contradicting answers on ed
-					self.clients
-					conn.send(json.dumps({"response": "True"}).encode())
-						#self.make_transaction(self.phrases[self.nonce])
 
 	def node_addresses(self, node_list_path):
 		node_addresses = []
@@ -139,7 +199,7 @@ class MyTCPServer(socketserver.ThreadingTCPServer):
 		Thread(target=self.handle_commands).start()
 		for node_addr in self.node_addresses(node_list_path):
 			Thread(target=Client, args = (node_addr, self)).start()
-			# self.clients.append(Client(node_addr, self))
+			self.clients.append(Client(node_addr, self))
 
 	def make_transaction(self, message):
 		transaction = self.make_transaction_request(message)

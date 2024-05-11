@@ -15,6 +15,7 @@ s.send(trans.encode())
 response_message = s.recv(1024)
 response_json = json.loads(response_message.decode())
 print(response_json["response"])
-# time.sleep(5)
+
+
 
 # s.send("consensus".encode())
