@@ -25,8 +25,12 @@ class Blockchain():
 	def  __init__(self):
 		self.blockchain = []
 		self.pool = []
-		self.new_block('0' * 64)
+		gen_block = {"index": 0, 'transactions':[], "previous_hash": "0000000000000000000000000000000000000000000000000000000000000000", "current_hash": "03525042c7132a2ec3db14b7aa1db816e61f1311199ae2a31f3ad1c4312047d1"}
+		self.blockchain.append(gen_block)
 		self.nonces = {}
+
+	def get_length(self):
+		return len(self.blockchain)
 
 	def commit_block(self, block):
 		self.pool = [tx for tx in self.pool if tx not in block['transactions']]
