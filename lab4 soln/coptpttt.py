@@ -98,106 +98,109 @@ class MyTCPServer(socketserver.ThreadingTCPServer):
         return
 
     def handle_commands(self):
-        command_socket_addr = (self.serv_addr[0],self.serv_addr[1]+100)
-        self.command_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.command_socket.bind(command_socket_addr)
-        self.command_socket.listen()
-        print(f"listening for connection to my command socket on: {command_socket_addr}")
-        conn, addr = self.command_socket.accept()
-        print(f"controller connected.")
-        
-        raw_message = conn.recv(1024)
-        print(raw_message.decode())
-        message = None
-        
-        try:
-            message = json.loads(raw_message.decode())
-        except json.JSONDecodeError:
-            print("JSON FILE NOT LOADABLE")
-        
-        if message and message['type'] == "values":
-            index = message['payload']
-            print(index)
-            print(self.blockchain.get_length())
-            if index == self.blockchain.get_length():
-                print("valid index")
-                if len(self.pool) == 0:
-                    print("POOL EMPTY SENDING EMPTY TRANSACTION")
-                    block = json.dumps({"index": 2, 'transactions':[], "previous_hash": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", "current_hash": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"}, sort_keys=True)
-                    conn.send(block.encode())
+        while True: 
+            command_socket_addr = (self.serv_addr[0],self.serv_addr[1]+100)
+            self.command_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.command_socket.bind(command_socket_addr)
+            self.command_socket.listen()
+            print(f"listening for connection to my command socket on: {command_socket_addr}")
+            conn, addr = self.command_socket.accept()
+            print(f"controller connected.")
+            
+            raw_message = conn.recv(1024)
+            print(raw_message.decode())
+            message = None
+            
+            try:
+                message = json.loads(raw_message.decode())
+            except json.JSONDecodeError:
+                print("JSON FILE NOT LOADABLE")
+            
+            if message and message['type'] == "values":
+                index = message['payload']
+                print(index)
+                print(self.blockchain.get_length())
+                if index == self.blockchain.get_length():
+                    print("valid index")
+                    if len(self.pool) == 0:
+                        print("POOL EMPTY SENDING EMPTY TRANSACTION")
+                        block = json.dumps({"index": 2, 'transactions':[], "previous_hash": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", "current_hash": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"}, sort_keys=True)
+                        conn.send(block.encode())
+                    else:
+                        print("SENDING BLOCK IN POOL")
+                        block = json.dumps(self.pool[0], sort_keys=True)
+                        conn.send(block.encode())
+
                 else:
-                    print("SENDING BLOCK IN POOL")
-                    block = json.dumps(self.pool[0], sort_keys=True)
-                    conn.send(block.encode())
+                    print("Receiving block proposal is not of the correct index")
 
-            else:
-                print("Receiving block proposal is not of the correct index")
+                #self.consensus_broadcast()
 
-            #self.consensus_broadcast()
+            elif message and message['type'] == "transaction":
+                print("[NET] Received a transaction from node {}: {}".format(addr[0], message))
+                transaction_valid = False
 
-        elif message and message['type'] == "transaction":
-            print("[NET] Received a transaction from node {}: {}".format(addr[0], message))
-            transaction_valid = False
-
-            #checks if message format is correct
-            if not self.validate_transaction(message):
-                conn.send(json.dumps({"response": "False"}).encode())
-
-            #checks if client exists
-            else:
-                #If the client is new, the nonce does not to be checked
-                if not self.client_exists(message["payload"]["sender"]):
-                    #DO WE ADD THE CLIENT INTO THE LIST OF CLIENTS?
-                    new_client = {"public_key": message["payload"]["sender"] ,"nonce": 0}
-                    
-                    conn.send(json.dumps({"response": "True"}).encode())
-                    
-                    self.pool.append(message)
-                    
-                    print("[MEM] Stored transaction in the transaction pool: {}".format(message['payload']['signature']))
-                    transaction_valid = True
-
-                #if nonce is not valid with stored client
-                elif not self.validate_nonce(message):
-                    print("[TX] Received an invalid transaction, wrong nonce - {}".format(message))
+                #checks if message format is correct
+                if not self.validate_transaction(message):
                     conn.send(json.dumps({"response": "False"}).encode())
 
+                #checks if client exists
                 else:
-                    #if transaction same public key + nonce transaction does not exist in pool
-                    if not self.validate_pool(message):
-                        conn.send(json.dumps({"response": "False"}).encode())
-                        #NOT SURE IF MESSAGE SHOULD BE WRONG NONCE OR WRONG SENDER
-                        print("[TX] Received an invalid transaction, wrong nonce - {}".format(message))
+                    #If the client is new, the nonce does not to be checked
+                    if not self.client_exists(message["payload"]["sender"]):
+                        #DO WE ADD THE CLIENT INTO THE LIST OF CLIENTS?
+                        new_client = {"public_key": message["payload"]["sender"] ,"nonce": 0}
                         
-                        """
                         conn.send(json.dumps({"response": "True"}).encode())
-                        self.pool.append(message)
-                        self.update_nonce(message["payload"]["sender"], message["payload"]["nonse"])
-                        print("[MEM] Stored transaction in the transaction pool: {}".format(message['payload']['signature']))
-                        transaction_valid = True"""
-                    else:
-                        conn.send(json.dumps({"response": "True"}).encode())
-
-                        """block_proposal = {"index": self.blockchain.get_length(), 'transactions':[message["payload"]], "previous_hash": self.blockchain.last_block()["current_hash"]}
+                        
+                        block_proposal = {"index": self.blockchain.get_length(), 'transactions':[message["payload"]], "previous_hash": self.blockchain.last_block()["current_hash"]}
                         trans = json.dumps(block_proposal, sort_keys=True)
                         new_hash = hashlib.sha256(trans.encode("utf-8")).hexdigest()
-                        block_proposal["current_hash"] = new_hash"""
-                        self.pool.append(message)
-
-                        self.update_nonce(message["payload"]["sender"], message["payload"]["nonse"])
+                        block_proposal["current_hash"] = new_hash
+                        self.pool.append(block_proposal)
+                        
                         print("[MEM] Stored transaction in the transaction pool: {}".format(message['payload']['signature']))
                         transaction_valid = True
 
+                    #if nonce is not valid with stored client
+                    elif not self.validate_nonce(message):
+                        print("[TX] Received an invalid transaction, wrong nonce - {}".format(message))
+                        conn.send(json.dumps({"response": "False"}).encode())
 
-            if transaction_valid:
-                index = self.blockchain.get_length()
-                block_proposal = self.create_block_proposal(self.blockchain.get_length(), [message["payload"]], self.blockchain.last_block()["current_hash"])
-                print("[PROPOSAL] Created a block proposal: {}".format(block_proposal))
-                    
-                block_request = json.dumps({"type": "values", 'payload': index})
-                self.consensus(block_request)
-        else:
-            time.sleep(1)
+                    else:
+                        #if transaction same public key + nonce transaction does not exist in pool
+                        if not self.validate_pool(message):
+                            conn.send(json.dumps({"response": "False"}).encode())
+                            #NOT SURE IF MESSAGE SHOULD BE WRONG NONCE OR WRONG SENDER
+                            print("[TX] Received an invalid transaction, wrong nonce - {}".format(message))
+                            
+                            """
+                            conn.send(json.dumps({"response": "True"}).encode())
+                            self.pool.append(message)
+                            self.update_nonce(message["payload"]["sender"], message["payload"]["nonse"])
+                            print("[MEM] Stored transaction in the transaction pool: {}".format(message['payload']['signature']))
+                            transaction_valid = True"""
+                        else:
+                            conn.send(json.dumps({"response": "True"}).encode())
+                            
+                            
+                            block_proposal = {"index": self.blockchain.get_length(), 'transactions':[message["payload"]], "previous_hash": self.blockchain.last_block()["current_hash"]}
+                            trans = json.dumps(block_proposal, sort_keys=True)
+                            new_hash = hashlib.sha256(trans.encode("utf-8")).hexdigest()
+                            block_proposal["current_hash"] = new_hash
+                            self.pool.append(block_proposal)
+
+                            self.update_nonce(message["payload"]["sender"], message["payload"]["nonse"])
+                            print("[MEM] Stored transaction in the transaction pool: {}".format(message['payload']['signature']))
+                            transaction_valid = True
+
+
+                if transaction_valid:
+                    index = self.blockchain.get_length()
+                    block_request = json.dumps({"type": "values", 'payload': index})
+                    self.consensus(block_request)
+            else:
+                time.sleep(1)
             
                             
     def consensus(self, block_request, f = 5):
@@ -205,6 +208,20 @@ class MyTCPServer(socketserver.ThreadingTCPServer):
         current_block_winner = self.pool[0]
         
         #for _ in range(f+1):
+        for c in self.clients:
+            message = c.send_message(block_request)
+            response_json = json.loads(message.decode())
+            
+            if self.pool[0]["current_hash"] < response_json["current_hash"]:
+                print("Current hash is less, disregarding received ")
+                
+            elif self.pool[0]["current_hash"] > response_json["current_hash"]:
+                current_block_winner = response_json
+                print("Current hash is more, updating pool ")
+                
+            else:
+                print("BOTH HASHES ARE THE SAME")
+                
         for c in self.clients:
             message = c.send_message(block_request)
             response_json = json.loads(message.decode())
@@ -302,13 +319,6 @@ class MyTCPServer(socketserver.ThreadingTCPServer):
         }
         return json.dumps(b_request)
 
-    def create_block_proposal(self, index, transactions, previous_hash):
-        block_proposal = {"index": index, 'transactions': transactions, "previous_hash": previous_hash}
-        json_block_proposal = json.dumps(block_proposal, sort_keys=True)
-        new_hash = hashlib.sha256(json_block_proposal.encode("utf-8")).hexdigest()
-        block_proposal["current_hash"] = new_hash
-        return block_proposal
-    
     def send_block_requests(self) -> set:
         request = self.make_block_request()
         results = []
@@ -441,10 +451,8 @@ class MyTCPHandler(socketserver.BaseRequestHandler):
                 data = recv_prefixed(self.request).decode()
             except:
                 break
-            
             print("Received from {}:".format(self.client_address[0]))
             print(data)
-            print("NOT PRINTING")
             if json.loads(data)['type'] == 'transaction':
                 self.transaction_response(data)
             elif json.loads(data)['type'] == 'values':
@@ -466,12 +474,7 @@ if __name__ == '__main__':
 
     with MyTCPServer((HOST, port), MyTCPHandler) as server:
         #server.startup('node-list-test.txt')
-        try: 
-            server.startup(node_address)
+        server.startup(node_address)
         # while True:
         # 	server.handle_request()
-            server.serve_forever()
-        
-        except KeyboardInterrupt:
-            server.server_close()
-            print()
+        server.serve_forever()
