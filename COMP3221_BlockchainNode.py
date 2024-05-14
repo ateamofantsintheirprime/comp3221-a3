@@ -118,7 +118,7 @@ class MyTCPServer(socketserver.ThreadingTCPServer):
 				decided_block = json.loads(list(self.block_proposals)[0])
 				for b in self.block_proposals:
 					block = json.loads(b) # im a clown and sets cant store dicts
-					print(block)
+					#print(block)
 					if block['current_hash'] < decided_block['current_hash']:
 						decided_block = block
 				self.block_proposals = set() # clear the block proposals.
