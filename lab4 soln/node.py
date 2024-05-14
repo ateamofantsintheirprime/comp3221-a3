@@ -121,20 +121,15 @@ class MyTCPServer(socketserver.ThreadingTCPServer):
                 print("valid index")
                 if len(self.pool) == 0:
                     print("POOL EMPTY SENDING EMPTY TRANSACTION")
-                    trans = json.dumps({"index": 2, 'transactions':[], "previous_hash": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", "current_hash": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"}, sort_keys=True)
-                    conn.send(trans.encode())
-                print()
-                trans = json.dumps({"index": 2, 'transactions':[{'sender': "a57819938feb51bb3f923496c9dacde3e9f667b214a0fb1653b6bfc0f185363b", "message": "hello", "nonce": 0, "signature": "142e395895e0bf4e4a3a7c3aabf2f59d80c517d24bb2d98a1a24384bc7cb29c9d593ce3063c5dd4f12ae9393f3345174485c052d0f5e87c082f286fd60c7fd0c"}], "previous_hash": "03525042c7132a2ec3db14b7aa1db816e61f1311199ae2a31f3ad1c4312047d1"}, sort_keys=True)
-                block_hash = hashlib.sha256(trans.encode("utf-8")).hexdigest()
-                print(block_hash)
-                
-                
-                if len(self.pool) == 0:
-                    return
-                
-                #send back proposal
+                    block = json.dumps({"index": 2, 'transactions':[], "previous_hash": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", "current_hash": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"}, sort_keys=True)
+                    conn.send(block.encode())
                 else:
-                    return
+                    print("SENDING BLOCK IN POOL")
+                    block = json.dumps(self.pool[0], sort_keys=True)
+                    conn.send(block.encode())
+
+            else:
+                print("Receiving block proposal is not of the correct index")
 
             #self.consensus_broadcast()
 
