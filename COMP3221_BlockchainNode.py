@@ -125,7 +125,7 @@ class MyTCPServer(socketserver.ThreadingTCPServer):
 				print("decided on the block: ", decided_block)
 				with self.blockchain_lock:
 					self.blockchain.commit_block(decided_block)
-					print("CONSENSUS] Appended to the blockchain: {}".format(decided_block['current_hash']))
+					print("[CONSENSUS] Appended to the blockchain: {}".format(decided_block['current_hash']))
 				print("finishing consensus protocol...")
 				with self.consensus_lock:
 					self.consensus_phase = False
@@ -140,7 +140,7 @@ class MyTCPServer(socketserver.ThreadingTCPServer):
 	
 	def send_transaction_requests(self, message):
 		request = self.make_transaction_request(message)
-		request = {"type": "transaction", 'payload': {'sender': "a57819938feb51bb496c9dacde3e9f667b214a0fb1653b6bfc0f185363b", "message": "hello", "nonce": 0, "signature": "142e395895e0bf4e4a3a7c3aabf2f59d80c517d24bb2d98a1a24384bc7cb29c9d593ce3063c5dd4f12ae9393f3345174485c052d0f5e87c082f286fd60c7fd0c"}}
+		#request = {"type": "transaction", 'payload': {'sender': "a57819938feb51bb496c9dacde3e9f667b214a0fb1653b6bfc0f185363b", "message": "hello", "nonce": 0, "signature": "142e395895e0bf4e4a3a7c3aabf2f59d80c517d24bb2d98a1a24384bc7cb29c9d593ce3063c5dd4f12ae9393f3345174485c052d0f5e87c082f286fd60c7fd0c"}}
 		results = []
 		#threads = []
 		for client in self.clients:
