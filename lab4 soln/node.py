@@ -209,10 +209,9 @@ class MyTCPServer(socketserver.ThreadingTCPServer):
             else:
                 print("BOTH HASHES ARE THE SAME")
         
-        
-        print("CONSENSUS REACHED")
-        print(current_block_winner)
         self.blockchain.blockchain.append(current_block_winner)
+        print("[CONSENSUS] Appended to the blockchain: {}".format(self.blockchain.last_block()["current_hash"]))
+        
                     
     
     def consensus_broadcast(self, block_request, f=5):
