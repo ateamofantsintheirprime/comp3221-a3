@@ -52,7 +52,6 @@ class MyTCPServer(socketserver.ThreadingTCPServer):
         
         if not (tx.get('payload', {}).get('signature') and isinstance(tx['payload']['signature'], str) and signature_valid.search(tx['payload']['signature'])):
             print("[TX] Received an invalid transaction, wrong signature message - {}".format(tx))
-            print("BBB")
             return False
         
         public_key = ed25519.Ed25519PublicKey.from_public_bytes(bytes.fromhex(tx['payload']['sender']))
@@ -424,6 +423,7 @@ class MyTCPHandler(socketserver.BaseRequestHandler):
 
     def responding_loop(self):
         while True:
+            
             # print(self.request.settimeout(2))
             # print(self.request.gettimeout())
             try:
@@ -433,7 +433,6 @@ class MyTCPHandler(socketserver.BaseRequestHandler):
             
             print("Received from {}:".format(self.client_address[0]))
             print(data)
-            print("NOT PRINTING")
             if json.loads(data)['type'] == 'transaction':
                 self.transaction_response(data)
             elif json.loads(data)['type'] == 'values':
