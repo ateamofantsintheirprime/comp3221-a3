@@ -117,8 +117,7 @@ class MyTCPServer(socketserver.ThreadingTCPServer):
         
         if message and message['type'] == "values":
             index = message['payload']
-            print(index)
-            print(self.blockchain.get_length())
+            print("BLOCK] Received a block request from node {}: {}".format(addr[0], message))
             if index == self.blockchain.get_length():
                 print("valid index")
                 if len(self.pool) == 0:
@@ -169,19 +168,10 @@ class MyTCPServer(socketserver.ThreadingTCPServer):
                         #NOT SURE IF MESSAGE SHOULD BE WRONG NONCE OR WRONG SENDER
                         print("[TX] Received an invalid transaction, wrong nonce - {}".format(message))
                         
-                        """
-                        conn.send(json.dumps({"response": "True"}).encode())
-                        self.pool.append(message)
-                        self.update_nonce(message["payload"]["sender"], message["payload"]["nonse"])
-                        print("[MEM] Stored transaction in the transaction pool: {}".format(message['payload']['signature']))
-                        transaction_valid = True"""
+                        
                     else:
                         conn.send(json.dumps({"response": "True"}).encode())
 
-                        """block_proposal = {"index": self.blockchain.get_length(), 'transactions':[message["payload"]], "previous_hash": self.blockchain.last_block()["current_hash"]}
-                        trans = json.dumps(block_proposal, sort_keys=True)
-                        new_hash = hashlib.sha256(trans.encode("utf-8")).hexdigest()
-                        block_proposal["current_hash"] = new_hash"""
                         self.pool.append(message)
 
                         self.update_nonce(message["payload"]["sender"], message["payload"]["nonse"])
@@ -191,28 +181,28 @@ class MyTCPServer(socketserver.ThreadingTCPServer):
 
             if transaction_valid:
                 index = self.blockchain.get_length()
-                block_proposal = self.create_block_proposal(self.blockchain.get_length(), [message["payload"]], self.blockchain.last_block()["current_hash"])
+                block_proposal = self.create_block_proposal(index, [message["payload"]], self.blockchain.last_block()["current_hash"])
                 print("[PROPOSAL] Created a block proposal: {}".format(block_proposal))
                     
                 block_request = json.dumps({"type": "values", 'payload': index})
-                self.consensus(block_request)
+                self.consensus(block_request, block_proposal)
         else:
             time.sleep(1)
             
                             
-    def consensus(self, block_request, f = 5):
+    def consensus(self, block_request, block_proposal, f = 5):
         print("STARTING CONSESNSUS")
-        current_block_winner = self.pool[0]
+        current_block_winner = block_proposal
         
         #for _ in range(f+1):
         for c in self.clients:
             message = c.send_message(block_request)
             response_json = json.loads(message.decode())
             
-            if self.pool[0]["current_hash"] < response_json["current_hash"]:
+            if block_proposal["current_hash"] < response_json["current_hash"]:
                 print("Current hash is less, disregarding received ")
                 
-            elif self.pool[0]["current_hash"] > response_json["current_hash"]:
+            elif block_proposal["current_hash"] > response_json["current_hash"]:
                 current_block_winner = response_json
                 print("Current hash is more, updating pool ")
                 
