@@ -52,6 +52,9 @@ class Blockchain():
 		self.pool = []
 		self.blockchain.append(block)
 
+	def get(self, index):
+		return self.blockchain[index]
+
 	def last_block(self):
 		return self.blockchain[-1]
 

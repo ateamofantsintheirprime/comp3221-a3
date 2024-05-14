@@ -12,7 +12,7 @@ try:
     while True:
         try:
             send_prefixed(s, input("command: ").encode())
-        except KeyboardInterrupt:
+        except (KeyboardInterrupt, BrokenPipeError, ConnectionResetError):
             print()
             s.close()
             break
