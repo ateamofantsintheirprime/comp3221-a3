@@ -79,9 +79,9 @@ class Blockchain():
             sender = tx.get('sender')
             self.nonces[sender] = self.nonces.get(sender,0) + 1
             self.pool.append(tx)
-            print("MEM] Stored transaction in the transaction pool: {}".format(tx.get("signature")))
+            print("[MEM] Stored transaction in the transaction pool: {}".format(tx.get("signature")))
             return True
-        print(tx)
+        #print(tx)
         return False
 
     def get_sender_nonce(self, sender_name) -> int:

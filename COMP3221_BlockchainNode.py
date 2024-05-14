@@ -122,11 +122,11 @@ class MyTCPServer(socketserver.ThreadingTCPServer):
 					if block['current_hash'] < decided_block['current_hash']:
 						decided_block = block
 				self.block_proposals = set() # clear the block proposals.
-				print("decided on the block: ", decided_block)
+				#print("decided on the block: ", decided_block)
 				with self.blockchain_lock:
 					self.blockchain.commit_block(decided_block)
 					print("[CONSENSUS] Appended to the blockchain: {}".format(decided_block['current_hash']))
-				print("finishing consensus protocol...")
+				#print("finishing consensus protocol...")
 				with self.consensus_lock:
 					self.consensus_phase = False
 			time.sleep(0.1)
@@ -135,7 +135,7 @@ class MyTCPServer(socketserver.ThreadingTCPServer):
 	def make_transaction_request(self, message):
 		signature = make_signature(self.private_key, message, self.nonce)
 		transaction =  make_transaction(self.sender, message, signature, self.nonce)
-		print("making transaction.")
+		#print("making transaction.")
 		return {"type": "transaction", "payload" : transaction}
 	
 	def send_transaction_requests(self, message):
@@ -148,11 +148,11 @@ class MyTCPServer(socketserver.ThreadingTCPServer):
 			#t.start()
 			#threads.append(t)
 		while len(results) < len(self.clients) and {"response": True} not in results: # Check until all clients have responded or one validated my tx
-			print("waiting for validation... ", results)
+			#print("waiting for validation... ", results)
 			time.sleep(0.1)
 		if {"response": True} in results:
 			# Transaction has been validated
-			print("someone validated my transaction woohoo!")
+			#print("someone validated my transaction woohoo!")
 			with self.blockchain_lock:
 				self.blockchain.add_transaction(request['payload'])
 			return True
@@ -180,7 +180,7 @@ class MyTCPServer(socketserver.ThreadingTCPServer):
 		for t in threads:
 			t.join()
 		
-		print("results of block request: ", results)
+		#print("results of block request: ", results)
 		for block_list in results:
 			for block in block_list:
 				# print("attempting to add block proposal: ")
