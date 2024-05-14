@@ -193,24 +193,45 @@ class MyTCPServer(socketserver.ThreadingTCPServer):
 
 
             if transaction_valid:
-                print("STARTING CONSESNSUS")
-
-                for c in self.clients:
-                    index = self.blockchain.get_length()
-                    trans = json.dumps({"type": "values", 'payload': index})
-                    message = c.send_message(trans)
-                    response_json = json.loads(message.decode())
-                    
-                    #HANDLE EMPTY TRANSACTION RESPONSE ALSO
-                    if self.pool[0]["current_hash"] < response_json["current_hash"]:
-                        print("Current hash is less, disregarding received ")
-                    elif self.pool[0]["current_hash"] > response_json["current_hash"]:
-                        print("Current hash is more, updating pool ")
-                    else:
-                        print("BOTH HASHES ARE THE SAME")
-
-
-
+                self.consensus()
+                            
+    def consensus(self, f =5):
+        print("STARTING CONSESNSUS")
+        for _ in range(f+1):
+            for c in self.clients:
+                index = self.blockchain.get_length()
+                trans = json.dumps({"type": "values", 'payload': index})
+                message = c.send_message(trans)
+                response_json = json.loads(message.decode())
+                
+                #HANDLE EMPTY TRANSACTION RESPONSE ALSO
+                if self.pool[0]["current_hash"] < response_json["current_hash"]:
+                    print("Current hash is less, disregarding received ")
+                elif self.pool[0]["current_hash"] > response_json["current_hash"]:
+                    print("Current hash is more, updating pool ")
+                else:
+                    print("BOTH HASHES ARE THE SAME")
+        
+    def consensus_broadcast(self, f=5):
+        print("beginning consensus protocol..")
+        print(self.RequestHandlerClass)
+        # Send block requests to all other nodes
+        print("active clients: ", self.clients)
+        for _ in range(f+1):
+            threads = []
+            print(f"broadcasting block request for round {_}")
+            for client in self.clients:
+                t = Thread(target=client.block_request())
+                threads.append(t)
+                t.start()
+                # received_blocks = client.block_request()
+                # self.block_proposals.update(received_blocks)
+            print("block proposals: ", self.block_proposals)
+            for t in threads:
+                t.join()
+        print("finishing consensus protocol...")
+        
+                
 
     def node_addresses(self, node_list_path):
         node_addresses = []
