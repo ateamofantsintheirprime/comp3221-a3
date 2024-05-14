@@ -35,7 +35,7 @@ class Blockchain():
 
 	def block_proposal(self, previous_hash=None):
 		block = {
-			'index': len(self.blockchain) + 1,
+			'index': len(self.blockchain),
 			'transactions': self.pool.copy(),
 			'previous_hash': previous_hash or self.blockchain[-1]['current_hash'],
 		}
@@ -44,7 +44,7 @@ class Blockchain():
 
 	def new_block(self, previous_hash=None):
 		block = {
-			'index': len(self.blockchain) + 1,
+			'index': len(self.blockchain),
 			'transactions': self.pool.copy(),
 			'previous_hash': previous_hash or self.blockchain[-1]['current_hash'],
 		}
