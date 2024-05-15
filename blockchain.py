@@ -41,6 +41,7 @@ class Blockchain():
             'previous_hash': previous_hash or self.blockchain[-1]['current_hash'],
         }
         block['current_hash'] = self.calculate_hash(block)
+        print("[PROPOSAL] Created a block proposal: {}".format(block))
         return block
 
     def new_block(self, previous_hash=None):
