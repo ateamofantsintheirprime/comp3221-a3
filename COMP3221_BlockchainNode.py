@@ -83,7 +83,6 @@ class MyTCPServer(socketserver.ThreadingTCPServer):
         # transaction = self.make_transaction_request(message)
         self.nonce += 1
         if self.send_transaction_requests(message):
-            print("DWADWA")
             with self.consensus_lock:
                 if not self.consensus_phase:
                     self.new_block_proposal()
@@ -99,6 +98,7 @@ class MyTCPServer(socketserver.ThreadingTCPServer):
             start = False
             with self.blockchain_lock:
                 if len(self.blockchain.pool) != 0:
+                    print("starting consensus!")
                     with self.consensus_lock:
                         self.consensus_phase = True
             with self.consensus_lock:
@@ -107,19 +107,25 @@ class MyTCPServer(socketserver.ThreadingTCPServer):
             if start:
                 #print("beginning consensus protocol..")
                 self.block_proposals.add(json.dumps(self.blockchain.block_proposal()))
+                print("adding new block proposal to my list!")
                 # Send block requests to all other nodes
                 #print("active clients: ", self.clients)
+                # time.sleep(1)
                 for _ in range(f+1):
-                    #print(f"broadcasting block request for round {_}")
+                    time.sleep(.05)
+                    # print(f"broadcasting block request for round {_}")
                     self.send_block_requests()
                     #print(f"finished round {_}")
                     # print("block proposals: ", self.block_proposals)
 
                 decided_block = json.loads(list(self.block_proposals)[0])
+                # print("BLOCK PROPOSALS:::")
+                # print(self.block_proposals)
                 for b in self.block_proposals:
                     block = json.loads(b) # im a clown and sets cant store dicts
                     #print(block)
                     if block['current_hash'] < decided_block['current_hash']:
+                        # print(f"new decided block, {block['current_hash']} < {decided_block['current_hash']}")
                         decided_block = block
                 self.block_proposals = set() # clear the block proposals.
                 #print("decided on the block: ", decided_block)
@@ -185,6 +191,7 @@ class MyTCPServer(socketserver.ThreadingTCPServer):
             for block in block_list:
                 # print("attempting to add block proposal: ")
                 # print(json.dumps(block))
+                # print("adding someone elses block!", json.dumps(block))
                 self.block_proposals.add(json.dumps(block))
         # print("block proposals inside block requests funciton:")
         # print(self.block_proposals)
@@ -216,9 +223,8 @@ class Client():
             self.socket.settimeout(0)
             #print("data reaching client: ", data)
         except (TimeoutError, BrokenPipeError) as e:
-            print(e)
             if e.errno == 32:
-                print("connection closed!, trying again")
+                pass
             else:
                 print(f"connection to node {self.address[1]} timed out!, trying again")
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -232,9 +238,7 @@ class Client():
                 data = json.loads(recv_prefixed(self.socket).decode())
                 self.socket.settimeout(0)
         except Exception as e:
-            print(e)
-            print("major error, shutting down")
-            self.shut_down()
+            pass
         results.append(data)
     
     def shut_down(self):
@@ -271,25 +275,33 @@ class MyTCPHandler(socketserver.BaseRequestHandler):
 
     def block_response(self, index):
         reply = []
+        # print(f"my current index: {self.server.blockchain.last_block()['index']+1}")
+        # print("block proposals within block_response(): ")
+        # print(self.server.block_proposals)
+
         with self.server.blockchain_lock:
             if index <= self.server.blockchain.last_block()['index']:
                 reply = [self.server.blockchain.get(index)]
         if reply == [] and index > 0:
+            # print("block proposals within block_response(): ")
+            # print(self.server.block_proposals)
             for block in self.server.block_proposals:
                 block = json.loads(block) # blocks are stored as strings cos of set() reasons
                 if block['index'] == index:
                     reply.append(block)
+            # print("sending out blocks:", reply)
+
             # Begin my own consensus
             with self.server.consensus_lock:
                 self.server.consensus_phase = True
 
-        print(self.server.block_proposals)
+        # print(self.server.block_proposals)
         #time.sleep(random.random()*2) # This line needs to be removed in the submitted version
         #print(f"serving a block response for index {index}:\n{reply}")
         try:
             send_prefixed(self.request, json.dumps(reply).encode())
         except Exception as e:
-            print("failed to serve response: ", e)
+            pass
 
     def responding_loop(self):
         while True:
@@ -299,7 +311,6 @@ class MyTCPHandler(socketserver.BaseRequestHandler):
             try:
                 data = json.loads(recv_prefixed(self.request).decode())
             except Exception as e:
-                print("error responding!", e)
                 break
             #print("Received from {}:".format(self.client_address))
             #print("data reaching server: ", data)

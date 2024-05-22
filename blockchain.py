@@ -35,6 +35,7 @@ class Blockchain():
         self.blockchain.append(block)
 
     def block_proposal(self, previous_hash=None):
+        print("creating new block proposal!")
         block = {
             'index': len(self.blockchain),
             'transactions': self.pool.copy(),
@@ -112,11 +113,14 @@ class Blockchain():
             if not(tx.get('nonce') > self.nonces.get(tx.get('sender'))):
                 print("[TX] Received an invalid transaction, wrong nonce - {}".format(tx))
                 return TransactionValidationError
-            
-        if (tx.get('nonce') < 0):
+
+        try:
+            if int(tx.get('nonce')) < 0:
+                print("[TX] Received an invalid transaction, wrong nonce - {}".format(tx))
+                return TransactionValidationError
+        except ValueError:
             print("[TX] Received an invalid transaction, wrong nonce - {}".format(tx))
             return TransactionValidationError
-            
 
         public_key = ed25519.Ed25519PublicKey.from_public_bytes(bytes.fromhex(tx['sender']))
         if not(tx.get('signature') and isinstance(tx['signature'], str) and signature_valid.search(tx['signature'])):
